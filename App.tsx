@@ -4,6 +4,20 @@ import { generateDaySummary } from './services/gemini';
 import { ActivityEntry, CATEGORIES } from './types';
 import { Button, Input, Label, Card, Modal, Select, TextArea } from './components/ui';
 
+// --- Utility Functions ---
+const getISTDate = () => {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+  const istTime = new Date(now.getTime() + istOffset);
+  return istTime.toISOString().split('T')[0];
+};
+
+const getISTNow = () => {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  return new Date(now.getTime() + istOffset);
+};
+
 // --- Icons ---
 const PlusIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>;
 const TrashIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>;
@@ -27,7 +41,7 @@ const Logo = () => (
 
 const App = () => {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(getISTDate());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -57,9 +71,9 @@ const App = () => {
   }, [loadEntries]);
 
   const handleOpenModal = useCallback(() => {
-    // Calculate default previous hour
-    const now = new Date();
-    const currentHour = now.getHours();
+    // Calculate default previous hour in IST
+    const now = getISTNow();
+    const currentHour = now.getUTCHours();
     
     // Default: Previous hour to Current hour (e.g., 14:00 - 15:00 if it's 15:20)
     let startH = currentHour - 1;
@@ -75,8 +89,8 @@ const App = () => {
     const defaultStartTime = `${pad(startH)}:00`;
     const defaultEndTime = `${pad(endH)}:00`;
 
-    // Set selected date to today
-    setSelectedDate(new Date().toISOString().split('T')[0]);
+    // Set selected date to today (IST)
+    setSelectedDate(getISTDate());
     
     setNewEntry({
       startTime: defaultStartTime,
@@ -171,11 +185,12 @@ const App = () => {
   const formatDateDisplay = (dateStr: string) => {
     const [year, month, day] = dateStr.split('-').map(Number);
     const date = new Date(year, month - 1, day);
-    const today = new Date();
-    const yesterday = new Date();
+    const today = getISTNow();
+    const todayDate = new Date(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+    const yesterday = new Date(todayDate);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    const isToday = date.toDateString() === today.toDateString();
+    const isToday = date.toDateString() === todayDate.toDateString();
     const isYesterday = date.toDateString() === yesterday.toDateString();
 
     if (isToday) return "Today";
