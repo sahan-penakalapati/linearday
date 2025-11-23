@@ -159,13 +159,13 @@ const App = () => {
 
   // Date Navigation
   const changeDate = (days: number) => {
-    const date = new Date(selectedDate);
+    const date = new Date(selectedDate + 'T00:00:00');
     date.setDate(date.getDate() + days);
     setSelectedDate(date.toISOString().split('T')[0]);
   };
 
   const formatDateDisplay = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const date = new Date(dateStr + 'T00:00:00');
     const today = new Date();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
