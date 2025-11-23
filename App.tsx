@@ -75,6 +75,9 @@ const App = () => {
     const defaultStartTime = `${pad(startH)}:00`;
     const defaultEndTime = `${pad(endH)}:00`;
 
+    // Set selected date to today
+    setSelectedDate(new Date().toISOString().split('T')[0]);
+    
     setNewEntry({
       startTime: defaultStartTime,
       endTime: defaultEndTime,
