@@ -1,0 +1,5 @@
+{
+  "name": "LinearDay",
+  "description": "A minimalist, Linear-styled daily activity tracker powered by local IndexedDB storage and Gemini AI for productivity summaries.",
+  "requestFramePermissions": []
+}
