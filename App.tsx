@@ -159,13 +159,18 @@ const App = () => {
 
   // Date Navigation
   const changeDate = (days: number) => {
-    const date = new Date(selectedDate + 'T00:00:00');
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
     date.setDate(date.getDate() + days);
-    setSelectedDate(date.toISOString().split('T')[0]);
+    const newYear = date.getFullYear();
+    const newMonth = String(date.getMonth() + 1).padStart(2, '0');
+    const newDay = String(date.getDate()).padStart(2, '0');
+    setSelectedDate(`${newYear}-${newMonth}-${newDay}`);
   };
 
   const formatDateDisplay = (dateStr: string) => {
-    const date = new Date(dateStr + 'T00:00:00');
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
     const today = new Date();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
