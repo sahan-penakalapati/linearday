@@ -447,7 +447,7 @@ const formatWeekRange = (dateStr: string): string => {
               >
                 <PlusIcon />
                 <span className="hidden sm:inline">Add Daily Goal</span>
-                <kbd className="hidden sm:inline-block ml-1.5 px-1 py-0.5 text-[10px] bg-zinc-200 text-black rounded border border-zinc-300 font-mono">D</kbd>
+                <kbd className="hidden sm:inline-block ml-1.5 px-1 py-0.5 text-[10px] bg-zinc-800 text-white rounded border border-zinc-700 font-mono">D</kbd>
               </Button>
             )}
             <Button 
@@ -598,7 +598,7 @@ const formatWeekRange = (dateStr: string): string => {
               >
                 <PlusIcon />
                 <span className="hidden sm:inline">Add Weekly Goal</span>
-                <kbd className="hidden sm:inline-block ml-1.5 px-1 py-0.5 text-[10px] bg-zinc-200 text-black rounded border border-zinc-300 font-mono">W</kbd>
+                <kbd className="hidden sm:inline-block ml-1.5 px-1 py-0.5 text-[10px] bg-zinc-800 text-white rounded border border-zinc-700 font-mono">W</kbd>
               </Button>
             )}
           </div>
