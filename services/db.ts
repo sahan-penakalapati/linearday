@@ -1,8 +1,10 @@
-import { ActivityEntry } from '../types';
+import { ActivityEntry, DailyGoal, WeeklyGoal } from '../types';
 
 const DB_NAME = 'LinearDayDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'entries';
+const DAILY_GOAL_STORE = 'dailyGoals';
+const WEEKLY_GOAL_STORE = 'weeklyGoals';
 
 class DBService {
   private db: IDBDatabase | null = null;
@@ -25,6 +27,12 @@ class DBService {
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
           store.createIndex('date', 'date', { unique: false });
+        }
+        if (!db.objectStoreNames.contains(DAILY_GOAL_STORE)) {
+          const store = db.createObjectStore(DAILY_GOAL_STORE, { keyPath: 'date', autoIncrement: false });
+        }
+        if (!db.objectStoreNames.contains(WEEKLY_GOAL_STORE)) {
+          const store = db.createObjectStore(WEEKLY_GOAL_STORE, { keyPath: 'weekStart', autoIncrement: false });
         }
       };
     });
@@ -61,6 +69,28 @@ class DBService {
     });
   }
 
+  async updateEntry(id: number, entry: Partial<ActivityEntry>): Promise<void> {
+    const db = await this.connect();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const getRequest = store.get(id);
+      
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result;
+        if (!existing) {
+          reject('Entry not found');
+          return;
+        }
+        const updated = { ...existing, ...entry };
+        const putRequest = store.put(updated);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject('Error updating entry');
+      };
+      getRequest.onerror = () => reject('Error fetching entry');
+    });
+  }
+
   async deleteEntry(id: number): Promise<void> {
     const db = await this.connect();
     return new Promise((resolve, reject) => {
@@ -70,6 +100,56 @@ class DBService {
 
       request.onsuccess = () => resolve();
       request.onerror = () => reject('Error deleting entry');
+    });
+  }
+
+  // Daily Goal methods
+  async setDailyGoal(goal: DailyGoal): Promise<void> {
+    const db = await this.connect();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([DAILY_GOAL_STORE], 'readwrite');
+      const store = transaction.objectStore(DAILY_GOAL_STORE);
+      const request = store.put(goal);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject('Error saving daily goal');
+    });
+  }
+
+  async getDailyGoal(date: string): Promise<DailyGoal | null> {
+    const db = await this.connect();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([DAILY_GOAL_STORE], 'readonly');
+      const store = transaction.objectStore(DAILY_GOAL_STORE);
+      const request = store.get(date);
+
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject('Error fetching daily goal');
+    });
+  }
+
+  // Weekly Goal methods
+  async setWeeklyGoal(goal: WeeklyGoal): Promise<void> {
+    const db = await this.connect();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([WEEKLY_GOAL_STORE], 'readwrite');
+      const store = transaction.objectStore(WEEKLY_GOAL_STORE);
+      const request = store.put(goal);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject('Error saving weekly goal');
+    });
+  }
+
+  async getWeeklyGoal(weekStart: string): Promise<WeeklyGoal | null> {
+    const db = await this.connect();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([WEEKLY_GOAL_STORE], 'readonly');
+      const store = transaction.objectStore(WEEKLY_GOAL_STORE);
+      const request = store.get(weekStart);
+
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject('Error fetching weekly goal');
     });
   }
   

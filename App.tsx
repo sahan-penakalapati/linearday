@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { dbService } from './services/db';
 import { generateDaySummary } from './services/gemini';
-import { ActivityEntry, CATEGORIES } from './types';
+import { ActivityEntry, CATEGORIES, DailyGoal, WeeklyGoal } from './types';
 import { Button, Input, Label, Card, Modal, Select, TextArea } from './components/ui';
 
 // --- Utility Functions ---
@@ -27,6 +28,7 @@ const ChevronRightIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" f
 const CalendarIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
 const ClockIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
 const CloseIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
+const EditIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
 
 // --- Components ---
 
@@ -39,12 +41,62 @@ const Logo = () => (
   </div>
 );
 
+// Markdown Renderer Component using react-markdown
+const MarkdownText: React.FC<{ text: string; className?: string }> = ({ text, className = '' }) => {
+  if (!text) return null;
+
+  return (
+    <div className={`markdown-content ${className}`}>
+      <ReactMarkdown
+        components={{
+          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+          h1: ({ children }) => <h1 className="text-xl font-semibold text-zinc-200 mb-2 mt-3 first:mt-0">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-lg font-semibold text-zinc-200 mb-2 mt-3 first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-base font-semibold text-zinc-200 mb-2 mt-2 first:mt-0">{children}</h3>,
+          h4: ({ children }) => <h4 className="text-sm font-semibold text-zinc-200 mb-1 mt-2 first:mt-0">{children}</h4>,
+          h5: ({ children }) => <h5 className="text-sm font-semibold text-zinc-200 mb-1 mt-2 first:mt-0">{children}</h5>,
+          h6: ({ children }) => <h6 className="text-xs font-semibold text-zinc-200 mb-1 mt-2 first:mt-0">{children}</h6>,
+          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+          li: ({ children }) => <li className="ml-2">{children}</li>,
+          strong: ({ children }) => <strong className="font-semibold text-zinc-200">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          code: ({ children, className: codeClassName }) => {
+            const isInline = !codeClassName;
+            return isInline ? (
+              <code className="bg-[#18181B] px-1 py-0.5 rounded text-xs font-mono text-zinc-300">{children}</code>
+            ) : (
+              <code className="block bg-[#18181B] p-2 rounded text-xs font-mono text-zinc-300 overflow-x-auto mb-2">{children}</code>
+            );
+          },
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-2 border-zinc-600 pl-3 italic text-zinc-400 mb-2">{children}</blockquote>
+          ),
+          hr: () => <hr className="border-[#27272A] my-3" />,
+          a: ({ href, children }) => (
+            <a href={href} className="text-zinc-300 hover:text-zinc-100 underline" target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+};
+
 const App = () => {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(getISTDate());
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [dailyGoal, setDailyGoal] = useState<string>('');
+  const [weeklyGoal, setWeeklyGoal] = useState<string>('');
+  const [isDailyGoalModalOpen, setIsDailyGoalModalOpen] = useState(false);
+  const [isWeeklyGoalModalOpen, setIsWeeklyGoalModalOpen] = useState(false);
 
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
@@ -66,28 +118,63 @@ const App = () => {
     }
   }, [selectedDate]);
 
+  const loadDailyGoal = useCallback(async () => {
+    try {
+      const goal = await dbService.getDailyGoal(selectedDate);
+      setDailyGoal(goal?.goal || '');
+    } catch (error) {
+      console.error("Failed to load daily goal", error);
+    }
+  }, [selectedDate]);
+
+  const loadWeeklyGoal = useCallback(async () => {
+    try {
+      // Get Monday of the current week
+      const { monday } = getWeekRange(selectedDate);
+      const goal = await dbService.getWeeklyGoal(monday);
+      setWeeklyGoal(goal?.goal || '');
+    } catch (error) {
+      console.error("Failed to load weekly goal", error);
+    }
+  }, [selectedDate]);
+
   useEffect(() => {
     loadEntries();
-  }, [loadEntries]);
+    loadDailyGoal();
+    loadWeeklyGoal();
+  }, [loadEntries, loadDailyGoal, loadWeeklyGoal]);
 
   const handleOpenModal = useCallback(() => {
-    // Calculate default previous hour in IST
+    // Get the last entry's end time, or use current time minus 1 hour
     const now = getISTNow();
-    const currentHour = now.getUTCHours();
-    
-    // Default: Previous hour to Current hour (e.g., 14:00 - 15:00 if it's 15:20)
-    let startH = currentHour - 1;
-    let endH = currentHour;
-    
-    // Handle edge case for midnight
-    if (startH < 0) {
-      startH = 23;
-      endH = 0;
-    }
-
     const pad = (n: number) => n.toString().padStart(2, '0');
-    const defaultStartTime = `${pad(startH)}:00`;
-    const defaultEndTime = `${pad(endH)}:00`;
+    
+    let defaultStartTime: string;
+    let defaultEndTime: string;
+    
+    // Find the last entry for the selected date
+    const lastEntry = entries.length > 0 ? entries[entries.length - 1] : null;
+    
+    if (lastEntry && lastEntry.endTime) {
+      // Use the last entry's end time as start time
+      defaultStartTime = lastEntry.endTime;
+    } else {
+      // Default: Previous hour to Current hour
+      const currentHour = now.getUTCHours();
+      const currentMinute = now.getUTCMinutes();
+      let startH = currentHour - 1;
+      let startM = 0;
+      
+      // Handle edge case for midnight
+      if (startH < 0) {
+        startH = 23;
+      }
+      
+      defaultStartTime = `${pad(startH)}:${pad(startM)}`;
+    }
+    
+    // End time is current time
+    defaultEndTime = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}`;
 
     // Set selected date to today (IST)
     setSelectedDate(getISTDate());
@@ -98,8 +185,9 @@ const App = () => {
       description: '',
       category: 'Work'
     });
+    setEditingEntryId(null);
     setIsModalOpen(true);
-  }, []);
+  }, [entries]);
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -110,6 +198,12 @@ const App = () => {
       if (e.key.toLowerCase() === 'a') {
         e.preventDefault();
         handleOpenModal();
+      } else if (e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        setIsDailyGoalModalOpen(true);
+      } else if (e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        setIsWeeklyGoalModalOpen(true);
       }
     };
 
@@ -136,19 +230,73 @@ const App = () => {
     }
 
     try {
-      await dbService.addEntry({
-        date: selectedDate,
-        startTime: newEntry.startTime!,
-        endTime: newEntry.endTime!,
-        description: newEntry.description!,
-        category: newEntry.category || 'General',
-        timestamp: Date.now(),
-      });
+      if (editingEntryId) {
+        // Update existing entry
+        await dbService.updateEntry(editingEntryId, {
+          startTime: newEntry.startTime!,
+          endTime: newEntry.endTime!,
+          description: newEntry.description!,
+          category: newEntry.category || 'General',
+        });
+      } else {
+        // Add new entry
+        await dbService.addEntry({
+          date: selectedDate,
+          startTime: newEntry.startTime!,
+          endTime: newEntry.endTime!,
+          description: newEntry.description!,
+          category: newEntry.category || 'General',
+          timestamp: Date.now(),
+        });
+      }
       
       setIsModalOpen(false);
+      setEditingEntryId(null);
       loadEntries();
     } catch (error) {
-      console.error("Failed to add entry", error);
+      console.error("Failed to save entry", error);
+    }
+  };
+
+  const handleEditEntry = (entry: ActivityEntry) => {
+    setNewEntry({
+      startTime: entry.startTime,
+      endTime: entry.endTime,
+      description: entry.description,
+      category: entry.category || 'Work'
+    });
+    setEditingEntryId(entry.id!);
+    setIsModalOpen(true);
+  };
+
+  const handleSaveDailyGoal = async () => {
+    try {
+      await dbService.setDailyGoal({
+        date: selectedDate,
+        goal: dailyGoal,
+        timestamp: Date.now(),
+      });
+      setIsDailyGoalModalOpen(false);
+      loadDailyGoal();
+    } catch (error) {
+      console.error("Failed to save daily goal", error);
+    }
+  };
+
+  const handleSaveWeeklyGoal = async () => {
+    try {
+      // Get Monday of the current week (Monday to Sunday)
+      const { monday } = getWeekRange(selectedDate);
+      
+      await dbService.setWeeklyGoal({
+        weekStart: monday,
+        goal: weeklyGoal,
+        timestamp: Date.now(),
+      });
+      setIsWeeklyGoalModalOpen(false);
+      loadWeeklyGoal();
+    } catch (error) {
+      console.error("Failed to save weekly goal", error);
     }
   };
 
@@ -182,22 +330,56 @@ const App = () => {
     setSelectedDate(`${newYear}-${newMonth}-${newDay}`);
   };
 
-  const formatDateDisplay = (dateStr: string) => {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const date = new Date(year, month - 1, day);
-    const today = getISTNow();
-    const todayDate = new Date(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-    const yesterday = new Date(todayDate);
-    yesterday.setDate(yesterday.getDate() - 1);
+const formatDateDisplay = (dateStr: string) => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  const today = getISTNow();
+  const todayDate = new Date(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const yesterday = new Date(todayDate);
+  yesterday.setDate(yesterday.getDate() - 1);
 
-    const isToday = date.toDateString() === todayDate.toDateString();
-    const isYesterday = date.toDateString() === yesterday.toDateString();
+  const isToday = date.toDateString() === todayDate.toDateString();
+  const isYesterday = date.toDateString() === yesterday.toDateString();
 
-    if (isToday) return "Today";
-    if (isYesterday) return "Yesterday";
-    
-    return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long' }).toUpperCase();
+  if (isToday) return "Today";
+  if (isYesterday) return "Yesterday";
+  
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long' }).toUpperCase();
+};
+
+// Helper function to get Monday and Sunday of the week for a given date
+const getWeekRange = (dateStr: string): { monday: string; sunday: string; mondayDate: Date; sundayDate: Date } => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  const dayOfWeek = date.getDay();
+  
+  // Calculate Monday offset (0 = Sunday, 1 = Monday, etc.)
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const mondayDate = new Date(date);
+  mondayDate.setDate(date.getDate() + mondayOffset);
+  
+  // Sunday is 6 days after Monday
+  const sundayDate = new Date(mondayDate);
+  sundayDate.setDate(mondayDate.getDate() + 6);
+  
+  const formatDate = (d: Date) => {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
+  
+  return {
+    monday: formatDate(mondayDate),
+    sunday: formatDate(sundayDate),
+    mondayDate,
+    sundayDate
+  };
+};
+
+// Format week range for display
+const formatWeekRange = (dateStr: string): string => {
+  const { mondayDate, sundayDate } = getWeekRange(dateStr);
+  const formatShort = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return `${formatShort(mondayDate)} - ${formatShort(sundayDate)}`;
+};
 
   const handleFormKeyDown = (e: React.KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -225,8 +407,7 @@ const App = () => {
         
         {/* Header Section */}
         <div className="mb-6">
-          <h1 className="text-xl font-medium text-zinc-100 mb-1">Activity Log</h1>
-          <p className="text-sm text-zinc-500">Record and review your daily progress.</p>
+          <h2 className="text-xl font-medium text-zinc-100 mb-1">Activity Log</h2>
         </div>
 
         {/* Toolbar */}
@@ -258,7 +439,18 @@ const App = () => {
 
           {/* Actions */}
           <div className="flex items-center gap-3">
-             <Button 
+            {!dailyGoal && (
+              <Button 
+                variant="secondary" 
+                onClick={() => setIsDailyGoalModalOpen(true)}
+                className="h-8 gap-2 px-3 text-zinc-300 hover:text-white border-zinc-800 hover:border-zinc-600 hover:bg-[#18181B]"
+              >
+                <PlusIcon />
+                <span className="hidden sm:inline">Add Daily Goal</span>
+                <kbd className="hidden sm:inline-block ml-1.5 px-1 py-0.5 text-[10px] bg-zinc-200 text-black rounded border border-zinc-300 font-mono">D</kbd>
+              </Button>
+            )}
+            <Button 
                 variant="secondary" 
                 onClick={handleGenerateSummary}
                 disabled={isGenerating || entries.length === 0}
@@ -269,6 +461,31 @@ const App = () => {
             </Button>
           </div>
         </div>
+
+        {/* Daily Goal Section */}
+        {dailyGoal && (
+          <div className="mb-6">
+            <Card className="p-4 bg-[#121215] border-[#27272A]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Daily Goal</span>
+                  </div>
+                  <MarkdownText text={dailyGoal} className="text-sm text-zinc-300 leading-relaxed" />
+                </div>
+                <Button 
+                  variant="ghost" 
+                  onClick={() => {
+                    setIsDailyGoalModalOpen(true);
+                  }}
+                  className="h-7 px-2 text-xs"
+                >
+                  <EditIcon />
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
 
         {/* AI Summary Card */}
         {summary && (
@@ -291,7 +508,7 @@ const App = () => {
         )}
 
         {/* Timeline View */}
-        <div className="relative min-h-[400px]">
+        <div className="relative min-h-[400px] flex flex-col">
           {entries.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 border border-dashed border-[#27272A] rounded-xl bg-[#121215]/50 text-zinc-600">
               <div className="p-3 rounded-full bg-[#18181B] mb-3">
@@ -301,7 +518,7 @@ const App = () => {
               <p className="text-xs mt-1">Press <kbd className="font-mono text-[10px] bg-zinc-800 px-1 rounded">A</kbd> to start tracking</p>
             </div>
           ) : (
-            <div className="relative space-y-0">
+            <div className="relative space-y-0 flex-1">
                {/* Vertical Line */}
                <div className="absolute left-[70px] top-2 bottom-0 w-px bg-[#27272A]" />
                
@@ -327,27 +544,82 @@ const App = () => {
                                     <p className="text-sm text-zinc-200 leading-snug">{entry.description}</p>
                                     <span className="text-[10px] text-zinc-600 mt-1 inline-block font-medium tracking-wide uppercase">{entry.category}</span>
                                 </div>
-                                <button 
-                                    onClick={() => handleDelete(entry.id)}
-                                    className="opacity-0 group-hover/card:opacity-100 text-zinc-600 hover:text-red-400 transition-all p-1"
-                                >
-                                    <TrashIcon />
-                                </button>
+                                <div className="flex items-center gap-1 opacity-0 group-hover/card:opacity-100 transition-all">
+                                    <button 
+                                        onClick={() => handleEditEntry(entry)}
+                                        className="text-zinc-600 hover:text-zinc-300 transition-all p-1"
+                                    >
+                                        <EditIcon />
+                                    </button>
+                                    <button 
+                                        onClick={() => handleDelete(entry.id)}
+                                        className="text-zinc-600 hover:text-red-400 transition-all p-1"
+                                    >
+                                        <TrashIcon />
+                                    </button>
+                                </div>
                             </div>
                        </div>
                    </div>
                ))}
             </div>
           )}
+          
+          {/* Weekly Goal Section - Right Below Activities */}
+          <div className="mt-6 mb-6 flex justify-center">
+            {weeklyGoal ? (
+              <div className="animate-slide-in-down w-full">
+                <Card className="p-4 bg-[#121215] border-[#27272A]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Weekly Goal</span>
+                        <span className="text-xs text-zinc-600">({formatWeekRange(selectedDate)})</span>
+                      </div>
+                      <MarkdownText text={weeklyGoal} className="text-sm text-zinc-300 leading-relaxed" />
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      onClick={() => {
+                        setIsWeeklyGoalModalOpen(true);
+                      }}
+                      className="h-7 px-2 text-xs"
+                    >
+                      <EditIcon />
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+            ) : (
+              <Button 
+                variant="secondary" 
+                onClick={() => setIsWeeklyGoalModalOpen(true)}
+                className="h-8 gap-2 px-3 text-zinc-300 hover:text-white border-zinc-800 hover:border-zinc-600 hover:bg-[#18181B]"
+              >
+                <PlusIcon />
+                <span className="hidden sm:inline">Add Weekly Goal</span>
+                <kbd className="hidden sm:inline-block ml-1.5 px-1 py-0.5 text-[10px] bg-zinc-200 text-black rounded border border-zinc-300 font-mono">W</kbd>
+              </Button>
+            )}
+          </div>
         </div>
 
       </main>
 
-      {/* Add Entry Modal */}
+      {/* Add/Edit Entry Modal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="New Entry"
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingEntryId(null);
+          setNewEntry({
+            startTime: '',
+            endTime: '',
+            description: '',
+            category: 'Work'
+          });
+        }}
+        title={editingEntryId ? "Edit Entry" : "New Entry"}
       >
         <form onSubmit={handleAddEntry} onKeyDown={handleFormKeyDown} className="flex flex-col gap-3">
             <div className="flex gap-3">
@@ -406,14 +678,85 @@ const App = () => {
             <div className="flex items-center justify-between pt-2">
                 <span className="text-[10px] text-zinc-600">Cmd+Enter to save</span>
                 <div className="flex gap-2">
-                    <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>
+                    <Button type="button" variant="ghost" onClick={() => {
+                      setIsModalOpen(false);
+                      setEditingEntryId(null);
+                      setNewEntry({
+                        startTime: '',
+                        endTime: '',
+                        description: '',
+                        category: 'Work'
+                      });
+                    }}>
                         Cancel
                     </Button>
                     <Button type="submit">
-                        Save Entry
+                        {editingEntryId ? "Update Entry" : "Save Entry"}
                     </Button>
                 </div>
             </div>
+        </form>
+      </Modal>
+
+      {/* Daily Goal Modal */}
+      <Modal
+        isOpen={isDailyGoalModalOpen}
+        onClose={() => setIsDailyGoalModalOpen(false)}
+        title="Daily Goal"
+      >
+        <form onSubmit={(e) => { e.preventDefault(); handleSaveDailyGoal(); }} className="flex flex-col gap-3">
+          <div>
+            <Label>Goal Description</Label>
+            <TextArea 
+              placeholder="What do you want to achieve today?&#10;&#10;Supports markdown: **bold**, *italic*, # headers, - lists" 
+              value={dailyGoal}
+              onChange={(e) => setDailyGoal(e.target.value)}
+              className="text-sm min-h-[120px] font-mono"
+              autoFocus
+            />
+            <p className="text-[10px] text-zinc-600 mt-1.5">
+              Markdown supported: <code className="bg-[#18181B] px-1 rounded">**bold**</code>, <code className="bg-[#18181B] px-1 rounded">*italic*</code>, <code className="bg-[#18181B] px-1 rounded"># Header</code>, <code className="bg-[#18181B] px-1 rounded">- list</code>
+            </p>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setIsDailyGoalModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              Save Goal
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Weekly Goal Modal */}
+      <Modal
+        isOpen={isWeeklyGoalModalOpen}
+        onClose={() => setIsWeeklyGoalModalOpen(false)}
+        title="Weekly Goal"
+      >
+        <form onSubmit={(e) => { e.preventDefault(); handleSaveWeeklyGoal(); }} className="flex flex-col gap-3">
+          <div>
+            <Label>Goal Description</Label>
+            <TextArea 
+              placeholder="What do you want to achieve this week?&#10;&#10;Supports markdown: **bold**, *italic*, # headers, - lists" 
+              value={weeklyGoal}
+              onChange={(e) => setWeeklyGoal(e.target.value)}
+              className="text-sm min-h-[120px] font-mono"
+              autoFocus
+            />
+            <p className="text-[10px] text-zinc-600 mt-1.5">
+              Markdown supported: <code className="bg-[#18181B] px-1 rounded">**bold**</code>, <code className="bg-[#18181B] px-1 rounded">*italic*</code>, <code className="bg-[#18181B] px-1 rounded"># Header</code>, <code className="bg-[#18181B] px-1 rounded">- list</code>
+            </p>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setIsWeeklyGoalModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              Save Goal
+            </Button>
+          </div>
         </form>
       </Modal>
 

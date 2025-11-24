@@ -14,6 +14,18 @@ export interface DaySummary {
   productivityScore?: number; // 1-10
 }
 
+export interface DailyGoal {
+  date: string; // YYYY-MM-DD
+  goal: string;
+  timestamp: number;
+}
+
+export interface WeeklyGoal {
+  weekStart: string; // YYYY-MM-DD (Monday of the week)
+  goal: string;
+  timestamp: number;
+}
+
 export const CATEGORIES = [
   "Work",
   "Meeting",
